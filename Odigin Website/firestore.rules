@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Identifiers and Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // User Profiles
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    // Persistent Carts
+    match /carts/{userId} {
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId) && request.resource.data.userId == userId;
+    }
+
+    // Orders
+    match /orders/{orderId} {
+      // Allow users to read their own orders or the seller to read all
+      allow get, list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        request.auth.token.email == 'subhampradhancollective@gmail.com'
+      );
+      // Allow creation if signed in and the userId matches the user
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      // Allow the seller to update order status
+      allow update: if isSignedIn() && request.auth.token.email == 'subhampradhancollective@gmail.com';
+    }
+
+    // Reviews (Social Proof)
+    match /products/{productId}/reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+  }
+}
